@@ -393,7 +393,7 @@ instance (Indexable ixs a, Show a) => Show (IxSet ixs a) where
 instance (Indexable ixs a, Read a) => Read (IxSet ixs a) where
   readsPrec n = map (first fromSet) . readsPrec n
 
-instance (Indexable ixs a, SafeCopy a) => SafeCopy (IxSet ixs a) where
+instance (Indexable ixs a, Typeable ixs, SafeCopy a, Typeable a) => SafeCopy (IxSet ixs a) where
   putCopy = contain . safePut . toList
   getCopy = contain $ fmap fromList safeGet
   errorTypeName _ = "IxSet"
@@ -595,7 +595,13 @@ inferIxSet ixset typeName calName entryPoints
                    getCalType t' = error ("Unexpected type in getCalType: " ++ pprint t')
                    -}
                    mkEntryPoint n = (conE 'Ix) `appE`
-                                    (sigE (varE 'Map.empty) (forallT binders (return context) $
+                                    (sigE (varE 'Map.empty) (forallT
+#if MIN_VERSION_template_haskell(2,17,0)
+                                                             (map (SpecifiedSpec <$) binders)
+#else
+                                                             binders
+#endif
+                                                             (return context) $
                                                              appT (appT (conT ''Map) (conT n))
                                                                       (appT (conT ''Set) typeCon))) `appE`
                                     (varE 'flattenWithCalcs `appE` varE calName)
@@ -611,9 +617,15 @@ inferIxSet ixset typeName calName entryPoints
                      return $ [i, ixType']  -- ++ d
            _ -> error "IxSet.inferIxSet calInfo unexpected match"
 
+#if MIN_VERSION_template_haskell(2,17,0)
+tyVarBndrToName :: TyVarBndr () -> Name
+tyVarBndrToName (PlainTV nm _) = nm
+tyVarBndrToName (KindedTV nm _ _) = nm
+#else
 tyVarBndrToName :: TyVarBndr -> Name
 tyVarBndrToName (PlainTV nm) = nm
 tyVarBndrToName (KindedTV nm _) = nm
+#endif
 
 -- | Generically traverses the argument to find all occurences of
 -- values of type @b@ and returns them as a list.
